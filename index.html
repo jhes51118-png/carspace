@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>淡水南加州社區(非官方) - 智慧車位</title>
+    
+    <!-- 1. 引入 React 核心 -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 2. 引入 Babel (讓瀏覽器看懂 React 語法) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 3. 引入 Tailwind CSS (樣式) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 4. 引入 Firebase (相容版，適合直接在 HTML 使用) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        /* 隱藏捲軸但保留功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-100 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- ★ 請在此處貼上您的 Firebase 設定 ★ ---
+        const firebaseConfig = {
+            apiKey: "您的API_KEY",
+            authDomain: "您的專案ID.firebaseapp.com",
+            projectId: "您的專案ID",
+            storageBucket: "您的專案ID.appspot.com",
+            messagingSenderId: "您的SenderId",
+            appId: "您的AppId"
+        };
+
+        // --- 初始化 Firebase ---
+        // 檢查是否已填寫設定，避免報錯
+        if (firebaseConfig.apiKey === "您的API_KEY") {
+            alert("請編輯 index.html 檔案，填入您的 Firebase 設定才能使用喔！");
+        } else {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = 'community-parking';
+
+        const { useState, useEffect } = React;
+
+        // --- 簡易圖示元件 (SVG) ---
+        // 因為不能用 import，這裡手動定義圖示
+        const Icons = {
+            Car: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>,
+            Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>,
+            Search: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
+            Shield: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>,
+            User: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            MapPin: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>,
+            Phone: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>,
+            Filter: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
+            Lock: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+            Database: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
+            X: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
+            FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>,
+            Calendar: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
+            RefreshCw: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>,
+            Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+            AlertTriangle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>,
+            CheckCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+            KeyRound: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg>,
+            Home: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+            MessageCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>,
+            Edit: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>,
+            Copy: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+            MessageSquare: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+            Send: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>,
+            HelpCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>,
+            ChevronRight: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
+            Save: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+        };
+
+        // --- 元件 Notification ---
+        const Notification = ({ message, type, onClose }) => {
+            useEffect(() => {
+                if (type !== 'loading') {
+                    const timer = setTimeout(onClose, 2500);
+                    return () => clearTimeout(timer);
+                }
+            }, [onClose, type]);
+
+            return (
+                <div className={`fixed top-4 left-4 right-4 text-center py-4 rounded-xl shadow-xl z-[80] animate-in fade-in slide-in-from-top-4 flex items-center justify-center gap-2 ${
+                    type === 'success' ? 'bg-green-700 text-white' : 
+                    type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'
+                }`}>
+                    <span className="font-bold text-lg">{message}</span>
+                </div>
+            );
+        };
+
+        // --- 元件 DetailModal ---
+        const DetailModal = ({ listing, onClose, onMarkCompleted, onEdit }) => {
+            const isRentOut = listing.type === 'rent_out';
+            const [showAuth, setShowAuth] = useState(false);
+            const [isVerified, setIsVerified] = useState(false);
+            
+            const [vHouse, setVHouse] = useState('');
+            const [vFloor, setVFloor] = useState('');
+            const [vUnit, setVUnit] = useState('');
+            const [errorMsg, setErrorMsg] = useState('');
+
+            const copyLineId = () => {
+                if (listing.lineId) {
+                    const textarea = document.createElement("textarea");
+                    textarea.value = listing.lineId;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    try {
+                        document.execCommand('copy');
+                        alert('Line ID 已複製到剪貼簿！');
+                    } catch (err) {
+                        alert('複製失敗，請手動複製');
+                    }
+                    document.body.removeChild(textarea);
+                }
+            };
+            
+            useEffect(() => {
+                document.body.style.overflow = 'hidden';
+                return () => { document.body.style.overflow = 'auto'; };
+            }, []);
+
+            const handleVerify = () => {
+                const inputCode = `${vHouse}-${vFloor}-${vUnit}`;
+                if (inputCode === listing.accessCode) {
+                    setIsVerified(true);
+                    setErrorMsg('');
+                } else {
+                    setErrorMsg('戶號資料錯誤，請重新輸入');
+                    setVHouse(''); setVFloor(''); setVUnit('');
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
+                    <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 animate-in slide-in-from-bottom duration-300 overflow-hidden max-h-[90vh] flex flex-col">
+                        <div className={`h-28 ${isRentOut ? 'bg-blue-700' : 'bg-teal-700'} relative shrink-0`}>
+                            <button onClick={onClose} className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 text-white p-3 rounded-full backdrop-blur-md transition-colors z-20">
+                                <Icons.X />
+                            </button>
+                            <div className="absolute -bottom-10 left-6">
+                                <div className="w-24 h-24 rounded-2xl bg-white shadow-lg flex items-center justify-center p-1">
+                                    <div className={`w-full h-full rounded-xl flex items-center justify-center ${isRentOut ? 'bg-blue-50 text-blue-700' : 'bg-teal-50 text-teal-700'}`}>
+                                        <Icons.User />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="pt-14 px-6 pb-8 overflow-y-auto">
+                            <div className="flex justify-between items-start mb-2">
+                                <h2 className="text-3xl font-black text-gray-900 tracking-tight">
+                                {listing.lastName} {listing.gender === 'Mr' ? '先生' : '小姐'}
+                                </h2>
+                                <span className={`px-4 py-2 rounded-lg text-lg font-bold ${isRentOut ? 'bg-blue-100 text-blue-800' : 'bg-teal-100 text-teal-800'}`}>
+                                    {isRentOut ? '出租' : '找位'}
+                                </span>
+                            </div>
+                            
+                            <div className="text-gray-500 text-base font-medium mb-8 flex items-center">
+                                <Icons.Calendar />
+                                <span className="ml-2">刊登時間：{listing.createdAt?.toDate ? listing.createdAt.toDate().toLocaleDateString() : '剛剛'}</span>
+                            </div>
+
+                            <div className="space-y-6 pb-20">
+                                <div className="bg-yellow-50 rounded-2xl p-5 flex justify-between items-center border-2 border-yellow-100">
+                                    <div>
+                                        <p className="text-base text-gray-600 font-bold mb-1">費用 (含管理費)</p>
+                                        <div className="text-4xl font-black text-gray-900 flex items-end leading-none">
+                                            <span className="text-lg mr-1 text-gray-500 font-bold mb-1">$</span>
+                                            {parseInt(listing.price).toLocaleString()}
+                                            <span className="text-lg ml-2 text-gray-500 font-bold mb-1">/月</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-gray-50 border-2 border-gray-100 rounded-2xl p-4">
+                                        <div className="text-gray-500 text-sm font-bold mb-1 flex items-center gap-1"><Icons.MapPin /> 樓層位置</div>
+                                        <div className="text-2xl font-black text-gray-800">{listing.floors.join(', ')}</div>
+                                    </div>
+                                    <div className="bg-gray-50 border-2 border-gray-100 rounded-2xl p-4">
+                                        <div className="text-gray-500 text-sm font-bold mb-1 flex items-center gap-1"><Icons.Car /> 車位編號</div>
+                                        <div className="text-2xl font-black text-gray-800">{listing.spotNumber || '未指定'}</div>
+                                    </div>
+                                </div>
+
+                                {listing.note && (
+                                    <div>
+                                        <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                            <Icons.FileText /> 備註說明
+                                        </h3>
+                                        <div className="bg-white rounded-xl p-5 text-gray-800 text-lg leading-relaxed whitespace-pre-wrap border-2 border-gray-200 shadow-sm">
+                                            {listing.note}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex flex-col gap-3">
+                                    <a href={`tel:${listing.phone}`} className="w-full bg-green-600 hover:bg-green-700 active:scale-95 transition-all text-white py-4 rounded-2xl shadow-xl shadow-green-100 flex flex-col justify-center items-center gap-1 mt-4">
+                                        <div className="flex items-center gap-2">
+                                            <Icons.Phone />
+                                            <span className="text-xl font-bold">撥打電話</span>
+                                        </div>
+                                        <span className="text-2xl font-black tracking-widest font-mono">{listing.phone}</span>
+                                    </a>
+
+                                    {listing.lineId && (
+                                        <button 
+                                            onClick={copyLineId}
+                                            className="w-full bg-[#06C755] hover:bg-[#05b54d] active:scale-95 transition-all text-white py-4 rounded-2xl shadow-lg flex justify-center items-center gap-3"
+                                        >
+                                            <Icons.MessageCircle />
+                                            <span className="text-lg font-bold">複製 Line ID: {listing.lineId}</span>
+                                            <Icons.Copy />
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {!showAuth ? (
+                                    <button 
+                                        onClick={() => setShowAuth(true)}
+                                        className="w-full mt-8 bg-gray-100 text-gray-500 py-3 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        <Icons.Settings /> 我是刊登者，我要管理
+                                    </button>
+                                ) : !isVerified ? (
+                                    <div className="mt-8 bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 animate-in fade-in slide-in-from-bottom-2">
+                                        <h4 className="text-lg font-black text-slate-800 mb-3 flex items-center gap-2">
+                                            <Icons.Home /> 驗證戶號
+                                        </h4>
+                                        <p className="text-sm text-gray-500 mb-4 font-bold">請輸入您刊登時填寫的戶號</p>
+                                        
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="flex-1 flex items-center bg-white border-2 border-gray-300 rounded-xl px-2 h-14">
+                                                <input type="tel" value={vHouse} onChange={e => {setVHouse(e.target.value); setErrorMsg('')}} className="w-full text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="25" />
+                                                <span className="text-xs font-bold text-gray-400 shrink-0">號</span>
+                                            </div>
+                                            <div className="flex-1 flex items-center bg-white border-2 border-gray-300 rounded-xl px-2 h-14">
+                                                <input type="tel" value={vFloor} onChange={e => {setVFloor(e.target.value); setErrorMsg('')}} className="w-full text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="100" />
+                                                <span className="text-xs font-bold text-gray-400 shrink-0">樓</span>
+                                            </div>
+                                            <div className="w-4 text-center font-bold text-gray-400">之</div>
+                                            <div className="flex-1 flex items-center bg-white border-2 border-gray-300 rounded-xl px-2 h-14">
+                                                <input type="tel" value={vUnit} onChange={e => {setVUnit(e.target.value); setErrorMsg('')}} className="w-full text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="100" />
+                                            </div>
+                                        </div>
+
+                                        <button 
+                                            onClick={handleVerify}
+                                            className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform"
+                                        >
+                                            驗證
+                                        </button>
+                                        
+                                        {errorMsg && <p className="text-red-500 text-sm font-bold mt-3 text-center bg-red-50 py-2 rounded-lg">{errorMsg}</p>}
+                                        <button onClick={() => setShowAuth(false)} className="w-full text-xs text-gray-400 font-bold mt-4 underline">取消</button>
+                                    </div>
+                                ) : (
+                                    <div className="mt-8 bg-green-50 border-2 border-green-200 rounded-2xl p-5 animate-in fade-in slide-in-from-bottom-2">
+                                        <h4 className="text-lg font-black text-green-800 mb-4 flex items-center gap-2">
+                                            <Icons.CheckCircle /> 驗證成功
+                                        </h4>
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={() => onEdit(listing)}
+                                                className="flex-1 bg-white border-2 border-green-600 text-green-700 py-3 rounded-xl font-bold active:scale-95 transition-transform flex items-center justify-center gap-2"
+                                            >
+                                                <Icons.Edit /> 修改內容
+                                            </button>
+                                            <button 
+                                                onClick={() => onMarkCompleted(listing.id)}
+                                                className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform flex items-center justify-center gap-2"
+                                            >
+                                                <Icons.CheckCircle /> 結案下架
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 元件 ListingCard ---
+        const ListingCard = ({ listing, isAdmin, onApprove, onDelete, onClick, isExpiredItem, onEdit }) => {
+            const isRentOut = listing.type === 'rent_out';
+            const isCompleted = listing.status === 'completed';
+            
+            return (
+                <div 
+                    onClick={onClick}
+                    className={`bg-white rounded-2xl p-5 shadow-md border-2 mb-4 relative overflow-hidden transition-all active:bg-gray-50 cursor-pointer 
+                        ${listing.status === 'pending' && isAdmin ? 'ring-4 ring-orange-200 bg-orange-50 border-orange-100' : 'border-gray-100'}
+                        ${isExpiredItem || isCompleted ? 'opacity-75 grayscale' : ''}
+                    `}
+                >
+                    <div className="absolute top-0 right-0 flex flex-col items-end">
+                        {listing.status === 'pending' && (
+                            <div className="bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1.5 rounded-bl-xl">待審核</div>
+                        )}
+                        {isExpiredItem && !isCompleted && (
+                            <div className="bg-red-100 text-red-800 text-xs font-bold px-3 py-1.5 rounded-bl-xl mt-1">已過期</div>
+                        )}
+                        {isCompleted && (
+                            <div className="bg-gray-700 text-white text-xs font-bold px-3 py-1.5 rounded-bl-xl mt-1">已成交/結案</div>
+                        )}
+                    </div>
+
+                    <div className="flex justify-between items-start mb-4">
+                        <span className={`px-4 py-1.5 rounded-lg text-sm font-bold tracking-wide ${
+                            isRentOut 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : 'bg-teal-100 text-teal-800'
+                        }`}>
+                            {isRentOut ? '出租' : '找位'}
+                        </span>
+                        
+                        <div className="flex items-center text-gray-700 text-sm font-bold bg-gray-100 px-3 py-1.5 rounded-lg mr-8 border border-gray-200">
+                            <Icons.MapPin />
+                            <span className="text-base ml-1">{listing.floors.join(', ')}</span>
+                            {listing.spotNumber && <span className="text-gray-400 mx-2">|</span>}
+                            {listing.spotNumber && <span className="font-mono text-base">{listing.spotNumber}</span>}
+                        </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-end">
+                        <div className="flex items-center gap-4">
+                            <div className={`w-14 h-14 rounded-full flex items-center justify-center border-2 ${isRentOut ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-teal-50 text-teal-700 border-teal-100'}`}>
+                                <Icons.User />
+                            </div>
+                            
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-black text-gray-900 text-xl leading-tight truncate">
+                                    {listing.lastName} {listing.gender === 'Mr' ? '先生' : '小姐'}
+                                </h3>
+                                <p className="text-base text-gray-500 mt-1 truncate max-w-[140px] font-medium">
+                                    {listing.note || '詳細資料...'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                            <div className="flex items-center justify-end text-red-600 font-black text-2xl leading-none">
+                                <span className="text-sm text-gray-500 font-bold mr-1">$</span>
+                                {parseInt(listing.price).toLocaleString()}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 font-bold bg-gray-100 px-2 py-0.5 rounded-md inline-block">
+                                含管理費
+                            </div>
+                        </div>
+                    </div>
+
+                    {isAdmin && (
+                        <div className="mt-4 pt-4 border-t-2 border-gray-100" onClick={e => e.stopPropagation()}>
+                            <div className="text-xs text-slate-500 font-bold mb-3 flex items-center gap-1 bg-slate-100 p-2 rounded-lg">
+                                <Icons.Home /> 戶號: <span className="text-slate-800 ml-1">{
+                                    // Helper function inlined for simplicity
+                                    (() => {
+                                        const code = listing.accessCode;
+                                        if (!code) return '未設定';
+                                        const parts = code.split('-');
+                                        if (parts.length === 3) return `${parts[0]}號 ${parts[1]}樓之${parts[2]}`;
+                                        return code;
+                                    })()
+                                }</span>
+                            </div>
+
+                            <div className="flex gap-2">
+                                {listing.status === 'pending' && onApprove && (
+                                    <button 
+                                        onClick={() => onApprove(listing.id)}
+                                        className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold shadow-sm active:bg-green-700"
+                                    >
+                                        通過
+                                    </button>
+                                )}
+                                {onEdit && (
+                                    <button 
+                                        onClick={() => onEdit(listing)}
+                                        className="flex-1 bg-blue-100 text-blue-700 py-2 rounded-lg text-sm font-bold active:bg-blue-200"
+                                    >
+                                        修改
+                                    </button>
+                                )}
+                                {onDelete && (
+                                    <button 
+                                        onClick={() => onDelete(listing.id)}
+                                        className="flex-1 bg-red-100 text-red-700 py-2 rounded-lg text-sm font-bold active:bg-red-200"
+                                    >
+                                        刪除
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- 主程式 App ---
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [view, setView] = useState('home');
+            const [listings, setListings] = useState([]);
+            const [feedbacks, setFeedbacks] = useState([]);
+            const [selectedListing, setSelectedListing] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [notification, setNotification] = useState(null);
+            
+            // Settings
+            const [appSettings, setAppSettings] = useState({ requireApproval: true, deleteAfterDays: 0, adminPassword: 'admin888' });
+            
+            // Admin
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [adminPassword, setAdminPassword] = useState('');
+            const [newAdminPassword, setNewAdminPassword] = useState(''); 
+            const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+            const [replyText, setReplyText] = useState({}); 
+            
+            // Filters
+            const [filterType, setFilterType] = useState('all');
+            const [filterFloor, setFilterFloor] = useState('all');
+
+            // Form State
+            const [editingId, setEditingId] = useState(null); 
+            const [formType, setFormType] = useState('rent_out');
+            const [lastName, setLastName] = useState('');
+            const [gender, setGender] = useState('Mr');
+            const [phone, setPhone] = useState('');
+            const [lineId, setLineId] = useState('');
+            const [selectedFloors, setSelectedFloors] = useState(['B2']);
+            const [spotNumber, setSpotNumber] = useState('');
+            const [price, setPrice] = useState('');
+            const [note, setNote] = useState('');
+            
+            // Household Form State
+            const [houseNumber, setHouseNumber] = useState('');
+            const [floorNumber, setFloorNumber] = useState('');
+            const [unitNumber, setUnitNumber] = useState('');
+            
+            // Feedback Form State
+            const [feedbackTab, setFeedbackTab] = useState('ask');
+            const [askContent, setAskContent] = useState('');
+            const [checkResults, setCheckResults] = useState([]);
+            const [hasChecked, setHasChecked] = useState(false);
+            
+            const [submitting, setSubmitting] = useState(false);
+
+            // Helpers
+            const isExpired = (createdAt, days) => {
+                if (days === 0 || !createdAt) return false;
+                const created = createdAt.toDate ? createdAt.toDate() : new Date();
+                const now = new Date();
+                const diffTime = Math.abs(now.getTime() - created.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                return diffDays > days;
+            };
+
+            const formatHouseholdId = (code) => {
+                if (!code) return '未設定';
+                const parts = code.split('-');
+                if (parts.length === 3) return `${parts[0]}號 ${parts[1]}樓之${parts[2]}`;
+                return code; 
+            };
+
+            // Auth
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        await auth.signInAnonymously();
+                    } catch (error) {
+                        console.error("Auth Error", error);
+                    }
+                };
+                initAuth();
+                const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
+                return () => unsubscribe();
+            }, []);
+
+            // Data Fetching
+            useEffect(() => {
+                if (!user) return;
+                
+                // Settings
+                const settingsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('app_settings').doc('config');
+                const unsubSettings = settingsRef.onSnapshot((docSnap) => {
+                    if (docSnap.exists) {
+                        setAppSettings(docSnap.data());
+                    } else {
+                        settingsRef.set({ requireApproval: true, deleteAfterDays: 0, adminPassword: 'admin888' });
+                    }
+                });
+
+                // Listings
+                const listingsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('listings');
+                const unsubListings = listingsRef.onSnapshot((snapshot) => {
+                    const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    list.sort((a, b) => {
+                        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+                        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+                        return timeB - timeA;
+                    });
+                    setListings(list);
+                    setLoading(false);
+                });
+
+                // Feedback
+                const feedbackRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('feedback');
+                const unsubFeedback = feedbackRef.onSnapshot((snapshot) => {
+                    const fbList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    fbList.sort((a, b) => {
+                        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+                        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+                        return timeB - timeA;
+                    });
+                    setFeedbacks(fbList);
+                });
+
+                return () => {
+                    unsubSettings();
+                    unsubListings();
+                    unsubFeedback();
+                };
+            }, [user]);
+
+            // Handlers
+            const handleAdminLogin = (e) => {
+                e.preventDefault();
+                const currentPassword = appSettings.adminPassword || 'admin888';
+                if (adminPassword === currentPassword) {
+                    setIsAdmin(true);
+                    setNotification({ message: '登入成功', type: 'success' });
+                } else {
+                    setNotification({ message: '密碼錯誤', type: 'error' });
+                }
+            };
+
+            const updateAdminPassword = async () => {
+                if (!newAdminPassword) {
+                    setNotification({ message: '請輸入新密碼', type: 'error' });
+                    return;
+                }
+                if (newAdminPassword !== confirmAdminPassword) {
+                    setNotification({ message: '兩次輸入的密碼不一致', type: 'error' });
+                    return;
+                }
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('app_settings').doc('config').update({ adminPassword: newAdminPassword });
+                    setNotification({ message: '管理員密碼已更新', type: 'success' });
+                    setNewAdminPassword('');
+                    setConfirmAdminPassword('');
+                } catch (e) {
+                    setNotification({ message: '更新失敗', type: 'error' });
+                }
+            };
+
+            const saveSettings = async (newSettings) => {
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('app_settings').doc('config').set(newSettings);
+                    setNotification({ message: '設定已更新', type: 'success' });
+                } catch (e) {
+                    setNotification({ message: '設定儲存失敗', type: 'error' });
+                }
+            };
+
+            const markAsCompleted = async (id) => {
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('listings').doc(id).update({ status: 'completed' });
+                    setNotification({ message: '成功！已標記為結案', type: 'success' });
+                    setSelectedListing(null);
+                } catch (e) {
+                    setNotification({ message: '操作失敗', type: 'error' });
+                }
+            };
+
+            const resetForm = () => {
+                setEditingId(null);
+                setLastName(''); setPhone(''); setLineId(''); setSpotNumber(''); setPrice(''); setNote(''); 
+                setHouseNumber(''); setFloorNumber(''); setUnitNumber('');
+                setFormType('rent_out');
+                setSelectedFloors(['B2']);
+            };
+
+            const startEditing = (l) => {
+                setEditingId(l.id);
+                setFormType(l.type);
+                setLastName(l.lastName);
+                setGender(l.gender);
+                setPhone(l.phone);
+                setLineId(l.lineId || '');
+                setSelectedFloors(l.floors);
+                setSpotNumber(l.spotNumber);
+                setPrice(l.price);
+                setNote(l.note);
+                if (l.accessCode) {
+                    const parts = l.accessCode.split('-');
+                    if (parts.length === 3) {
+                        setHouseNumber(parts[0]);
+                        setFloorNumber(parts[1]);
+                        setUnitNumber(parts[2]);
+                    }
+                }
+                setSelectedListing(null);
+                setView('post');
+            };
+
+            const handleCreateOrUpdate = async (e) => {
+                e.preventDefault();
+                if (!user) return;
+                if (selectedFloors.length === 0) {
+                    setNotification({ message: '請至少選擇一個樓層', type: 'error' });
+                    return;
+                }
+                if (!houseNumber || !floorNumber || !unitNumber) {
+                    setNotification({ message: '請完整填寫戶號資料', type: 'error' });
+                    return;
+                }
+
+                setSubmitting(true);
+                const accessCode = `${houseNumber}-${floorNumber}-${unitNumber}`;
+                const listingData = {
+                    type: formType,
+                    lastName, gender, phone, lineId, floors: selectedFloors, spotNumber, price, note,
+                    accessCode, 
+                };
+
+                try {
+                    const collectionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('listings');
+                    
+                    if (editingId) {
+                        await collectionRef.doc(editingId).update(listingData);
+                        setNotification({ message: '修改成功！', type: 'success' });
+                    } else {
+                        const initialStatus = appSettings.requireApproval ? 'pending' : 'approved';
+                        await collectionRef.add({
+                            ...listingData,
+                            status: initialStatus,
+                            userId: user.uid,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        if (initialStatus === 'approved') {
+                            setNotification({ message: '刊登成功！已直接發佈。', type: 'success' });
+                        } else {
+                            setNotification({ message: '提交成功！請等待審核。', type: 'success' });
+                        }
+                    }
+                    resetForm();
+                    setView(isAdmin ? 'admin' : 'home'); 
+                } catch (e) {
+                    console.error(e);
+                    setNotification({ message: '操作失敗', type: 'error' });
+                } finally {
+                    setSubmitting(false);
+                }
+            };
+
+            const toggleFloor = (f) => {
+                // Safe guard for array operations
+                const currentFloors = selectedFloors || [];
+                if (formType === 'rent_out') {
+                    setSelectedFloors([f]);
+                } else {
+                    if (currentFloors.includes(f)) setSelectedFloors(currentFloors.filter(x => x !== f));
+                    else setSelectedFloors([...currentFloors, f].sort());
+                }
+            };
+
+            const changeFormType = (type) => {
+                setFormType(type);
+                if (!editingId) {
+                    if (type === 'rent_out') setSelectedFloors(['B2']);
+                    else setSelectedFloors([]);
+                }
+            };
+
+            // Feedback Logic
+            const submitFeedback = async (e) => {
+                e.preventDefault();
+                if(!houseNumber || !floorNumber || !unitNumber || !askContent) {
+                    setNotification({ message: '請填寫完整資訊', type: 'error' });
+                    return;
+                }
+                setSubmitting(true);
+                try {
+                    const householdId = `${houseNumber}-${floorNumber}-${unitNumber}`;
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('feedback').add({
+                        householdId,
+                        content: askContent,
+                        reply: '',
+                        status: 'pending',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    setNotification({ message: '提問已送出，請稍後再來查詢回覆', type: 'success' });
+                    setAskContent('');
+                } catch(e) {
+                    setNotification({ message: '送出失敗', type: 'error' });
+                } finally {
+                    setSubmitting(false);
+                }
+            };
+
+            const checkFeedback = (e) => {
+                e.preventDefault();
+                if(!houseNumber || !floorNumber || !unitNumber) {
+                    setNotification({ message: '請輸入戶號以查詢', type: 'error' });
+                    return;
+                }
+                const householdId = `${houseNumber}-${floorNumber}-${unitNumber}`;
+                const myFeedbacks = feedbacks.filter(f => f.householdId === householdId);
+                setCheckResults(myFeedbacks);
+                setHasChecked(true);
+            };
+
+            const replyFeedback = async (id) => {
+                if(!replyText[id]) return;
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('feedback').doc(id).update({
+                        reply: replyText[id],
+                        status: 'replied',
+                        repliedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    setNotification({ message: '已回覆', type: 'success' });
+                    const newReplies = { ...replyText };
+                    delete newReplies[id];
+                    setReplyText(newReplies);
+                } catch(e) {
+                    setNotification({ message: '回覆失敗', type: 'error' });
+                }
+            };
+
+            // Filter
+            const publicListings = listings.filter(l => 
+                l.status === 'approved' && 
+                (filterType === 'all' || l.type === filterType) &&
+                (filterFloor === 'all' || l.floors.includes(filterFloor)) &&
+                !isExpired(l.createdAt, appSettings.deleteAfterDays)
+            );
+            const pendingListings = listings.filter(l => l.status === 'pending');
+            const approvedListings = listings.filter(l => (l.status === 'approved' || l.status === 'completed') && !isExpired(l.createdAt, appSettings.deleteAfterDays));
+            const pendingFeedbacks = feedbacks.filter(f => f.status === 'pending');
+            const isMultiFloor = formType === 'want_rent';
+
+            if (loading && listings.length === 0) return (
+                <div className="h-screen flex items-center justify-center bg-gray-50 flex-col gap-3">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
+                    <div className="text-gray-500 text-lg font-bold">載入資料中...</div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen bg-gray-100 font-sans text-slate-900 pb-28">
+                    {notification && <Notification message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
+                    
+                    {selectedListing && (
+                        <DetailModal 
+                            listing={selectedListing} 
+                            onClose={() => setSelectedListing(null)} 
+                            onMarkCompleted={(id) => markAsCompleted(id)}
+                            onEdit={startEditing}
+                        />
+                    )}
+
+                    {/* Header */}
+                    <header className="bg-white sticky top-0 z-30 border-b border-gray-200 shadow-md">
+                        <div className="px-5 py-4 flex justify-between items-center">
+                            <div className="flex items-center gap-3" onClick={() => setView('home')}>
+                                <div className="bg-blue-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transform rotate-3 text-white">
+                                    <Icons.Car />
+                                </div>
+                                <div>
+                                    <h1 className="font-black text-2xl text-slate-900 leading-none">淡水南加州社區(非官方)</h1>
+                                    <p className="text-xs text-slate-500 font-bold mt-0.5">智慧車位出租/承租</p>
+                                </div>
+                            </div>
+                            {view === 'home' && (
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center bg-gray-100 rounded-xl px-3 py-2 border-2 border-gray-200">
+                                        <div className="mr-2 text-gray-600"><Icons.Filter /></div>
+                                        <select value={filterFloor} onChange={(e) => setFilterFloor(e.target.value)} className="bg-transparent text-base font-bold text-slate-900 outline-none appearance-none pr-4 cursor-pointer">
+                                            <option value="all">所有樓層</option>
+                                            <option value="B2">B2 層</option>
+                                            <option value="B3">B3 層</option>
+                                            <option value="B4">B4 層</option>
+                                        </select>
+                                    </div>
+                                    <button onClick={() => setView('admin')} className="text-gray-300 hover:text-gray-500 transition-colors p-1">
+                                        <Icons.Shield />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        {view === 'home' && (
+                            <div className="px-4 pb-3">
+                                <div className="bg-gray-100 p-1.5 rounded-xl flex gap-2">
+                                    <button onClick={() => setFilterType('all')} className={`flex-1 py-3 text-base font-bold rounded-lg transition-all ${filterType === 'all' ? 'bg-white text-slate-900 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}>全部</button>
+                                    <button onClick={() => setFilterType('rent_out')} className={`flex-1 py-3 text-base font-bold rounded-lg transition-all ${filterType === 'rent_out' ? 'bg-white text-blue-700 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}>出租</button>
+                                    <button onClick={() => setFilterType('want_rent')} className={`flex-1 py-3 text-base font-bold rounded-lg transition-all ${filterType === 'want_rent' ? 'bg-white text-teal-700 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}>找位</button>
+                                </div>
+                            </div>
+                        )}
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="px-4 py-5 max-w-lg mx-auto">
+                        
+                        {/* VIEW: HOME */}
+                        {view === 'home' && (
+                            <div className="space-y-4">
+                                {publicListings.length > 0 ? (
+                                    publicListings.map(l => (
+                                        <ListingCard key={l.id} listing={l} onClick={() => setSelectedListing(l)} />
+                                    ))
+                                ) : (
+                                    <div className="py-24 text-center bg-white rounded-3xl mx-2 shadow-sm border border-gray-100">
+                                        <div className="bg-gray-50 w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-gray-100 text-gray-300">
+                                            <Icons.Search />
+                                        </div>
+                                        <h3 className="text-gray-900 font-black text-2xl mb-2">
+                                            {filterFloor !== 'all' ? `B${filterFloor} 層` : ''}目前沒有資料
+                                        </h3>
+                                        <p className="text-gray-500 text-base mb-8 px-6 font-medium">現在正是刊登的好時機！<br/>點擊下方按鈕開始新增。</p>
+                                        <button onClick={() => { resetForm(); setView('post'); }} className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl shadow-blue-200 active:scale-95 transition-all inline-flex items-center gap-2">
+                                            <Icons.Plus /> 立即刊登車位
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="text-center pt-8 pb-4">
+                                    <p className="text-xs text-gray-400 font-bold">淡水南加州社區非官方</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* VIEW: POST */}
+                        {view === 'post' && (
+                            <div className="animate-in fade-in zoom-in-95 duration-200">
+                                <div className="bg-white rounded-3xl shadow-md border border-gray-100 p-6 mb-8">
+                                    <h2 className="text-2xl font-black mb-6 text-center text-slate-900 flex items-center justify-center gap-2">
+                                        {editingId ? <Icons.Edit className="text-blue-600"/> : <Icons.Plus className="text-blue-600"/>}
+                                        {editingId ? '修改刊登內容' : '新增刊登'}
+                                    </h2>
+                                    
+                                    <form onSubmit={handleCreateOrUpdate} className="space-y-6">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <button type="button" onClick={() => changeFormType('rent_out')} className={`p-5 rounded-2xl border-2 text-base font-bold transition-all flex flex-col items-center gap-3 ${formType === 'rent_out' ? 'bg-blue-50 border-blue-600 text-blue-800' : 'border-gray-200 text-gray-400 bg-white'}`}>
+                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${formType === 'rent_out' ? 'bg-blue-200' : 'bg-gray-100'}`}><span className="text-xl font-black">P</span></div>
+                                                車位出租
+                                            </button>
+                                            <button type="button" onClick={() => changeFormType('want_rent')} className={`p-5 rounded-2xl border-2 text-base font-bold transition-all flex flex-col items-center gap-3 ${formType === 'want_rent' ? 'bg-teal-50 border-teal-600 text-teal-800' : 'border-gray-200 text-gray-400 bg-white'}`}>
+                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${formType === 'want_rent' ? 'bg-teal-200' : 'bg-gray-100'}`}><span className="text-xl font-black">?</span></div>
+                                                我找車位
+                                            </button>
+                                        </div>
+
+                                        <div className="flex gap-4">
+                                            <div className="flex-1 space-y-2">
+                                                <label className="text-sm font-bold text-gray-600 ml-1">您的姓氏</label>
+                                                <input required type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="陳" className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-4 py-4 text-xl font-bold outline-none transition-all placeholder:text-gray-300" />
+                                            </div>
+                                            <div className="w-32 space-y-2">
+                                                <label className="text-sm font-bold text-gray-600 ml-1">稱謂</label>
+                                                <select value={gender} onChange={e => setGender(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-2 py-4 text-xl font-bold outline-none transition-all appearance-none text-center">
+                                                    <option value="Mr">先生</option>
+                                                    <option value="Ms">小姐</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-600 ml-1">手機號碼</label>
+                                            <input required type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="0912345678" className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-4 py-4 text-xl font-bold outline-none transition-all placeholder:text-gray-300 tracking-wide" />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-600 ml-1">Line ID (選填)</label>
+                                            <input type="text" value={lineId} onChange={e => setLineId(e.target.value)} placeholder="輸入 Line ID" className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-4 py-4 text-lg font-medium outline-none transition-all placeholder:text-gray-300" />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-600 ml-1 flex justify-between"><span>費用 (含管理費)</span></label>
+                                            <div className="relative">
+                                                <span className="absolute left-5 top-4 text-gray-400 font-bold text-xl">$</span>
+                                                <input required type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="2500" className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl pl-10 pr-20 py-4 text-2xl outline-none transition-all font-mono font-black placeholder:text-gray-300" />
+                                                <span className="absolute right-5 top-5 text-gray-500 text-base font-bold">元/月</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-600 ml-1">{isMultiFloor ? '偏好樓層 (可複選)' : '所在樓層 (單選)'}</label>
+                                            <div className="flex gap-3">
+                                                {['B2', 'B3', 'B4'].map((f) => (
+                                                    <button key={f} type="button" onClick={() => toggleFloor(f)} className={`flex-1 py-4 rounded-xl text-lg font-black border-2 transition-all ${(selectedFloors || []).includes(f) ? (isMultiFloor ? 'bg-teal-50 border-teal-600 text-teal-800' : 'bg-blue-50 border-blue-600 text-blue-800') : 'border-gray-200 text-gray-400 bg-white'}`}>
+                                                        {f}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {!isMultiFloor && (
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-gray-600 ml-1">車位編號</label>
+                                                <input required type="text" value={spotNumber} onChange={e => setSpotNumber(e.target.value)} placeholder="例如: 105" className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-4 py-4 text-xl font-bold outline-none transition-all placeholder:text-gray-300" />
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-600 ml-1 flex items-center gap-1"><Icons.Home /> 設定管理資料 (請輸入戶號) <span className="text-red-500">*</span></label>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1 flex items-center bg-yellow-50 border-2 border-yellow-200 rounded-xl px-2 h-16"><input required type="tel" value={houseNumber} onChange={e => setHouseNumber(e.target.value)} className="w-full bg-transparent text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="25" /><span className="text-sm font-bold text-gray-400 shrink-0">號</span></div>
+                                                <div className="flex-1 flex items-center bg-yellow-50 border-2 border-yellow-200 rounded-xl px-2 h-16"><input required type="tel" value={floorNumber} onChange={e => setFloorNumber(e.target.value)} className="w-full bg-transparent text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="100" /><span className="text-sm font-bold text-gray-400 shrink-0">樓</span></div>
+                                                <div className="w-4 text-center font-bold text-gray-400">之</div>
+                                                <div className="flex-1 flex items-center bg-yellow-50 border-2 border-yellow-200 rounded-xl px-2 h-16"><input required type="tel" value={unitNumber} onChange={e => setUnitNumber(e.target.value)} className="w-full bg-transparent text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="100" /></div>
+                                            </div>
+                                            <p className="text-xs text-gray-400 font-bold ml-1">※ 僅後台可見，日後結案/修改時需輸入此資料驗證身份。</p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-600 ml-1">備註說明 (選填)</label>
+                                            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="例如: 車位寬敞、近電梯..." rows={3} className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-4 py-4 text-lg font-medium outline-none transition-all resize-none placeholder:text-gray-300" />
+                                        </div>
+
+                                        <div className="pt-4 pb-2 flex gap-3">
+                                            {editingId && <button type="button" onClick={() => { resetForm(); setView(isAdmin ? 'admin' : 'home'); }} className="flex-1 bg-gray-100 text-gray-500 py-5 rounded-2xl font-bold text-lg">取消</button>}
+                                            <button type="submit" disabled={submitting} className="flex-[2] bg-blue-600 text-white py-5 rounded-2xl font-black text-xl shadow-xl shadow-blue-200 active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2">
+                                                {submitting ? '處理中...' : (editingId ? '確認修改' : '送出刊登')}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* VIEW: FEEDBACK */}
+                        {view === 'feedback' && (
+                            <div className="animate-in fade-in zoom-in-95 duration-200">
+                                <div className="bg-white rounded-3xl shadow-md border border-gray-100 overflow-hidden mb-8">
+                                    <div className="flex bg-gray-50 border-b border-gray-200">
+                                        <button onClick={() => setFeedbackTab('ask')} className={`flex-1 py-4 font-bold text-lg transition-colors ${feedbackTab === 'ask' ? 'bg-white text-slate-900 border-b-4 border-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>我要提問</button>
+                                        <button onClick={() => setFeedbackTab('check')} className={`flex-1 py-4 font-bold text-lg transition-colors ${feedbackTab === 'check' ? 'bg-white text-slate-900 border-b-4 border-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>查看回覆</button>
+                                    </div>
+
+                                    <div className="p-6">
+                                        <div className="space-y-2 mb-6">
+                                            <label className="text-sm font-bold text-gray-600 ml-1 flex items-center gap-1"><Icons.Home /> 請輸入您的戶號 <span className="text-red-500">*</span></label>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1 flex items-center bg-gray-50 border-2 border-gray-200 rounded-xl px-2 h-14"><input required type="tel" value={houseNumber} onChange={e => setHouseNumber(e.target.value)} className="w-full bg-transparent text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="25" /><span className="text-sm font-bold text-gray-400 shrink-0">號</span></div>
+                                                <div className="flex-1 flex items-center bg-gray-50 border-2 border-gray-200 rounded-xl px-2 h-14"><input required type="tel" value={floorNumber} onChange={e => setFloorNumber(e.target.value)} className="w-full bg-transparent text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="100" /><span className="text-sm font-bold text-gray-400 shrink-0">樓</span></div>
+                                                <div className="w-4 text-center font-bold text-gray-400">之</div>
+                                                <div className="flex-1 flex items-center bg-gray-50 border-2 border-gray-200 rounded-xl px-2 h-14"><input required type="tel" value={unitNumber} onChange={e => setUnitNumber(e.target.value)} className="w-full bg-transparent text-center text-xl font-black outline-none placeholder:text-gray-300" placeholder="100" /></div>
+                                            </div>
+                                        </div>
+
+                                        {feedbackTab === 'ask' ? (
+                                            <form onSubmit={submitFeedback} className="space-y-4">
+                                                <div>
+                                                    <label className="text-sm font-bold text-gray-600 ml-1 mb-2 block">問題內容</label>
+                                                    <textarea required value={askContent} onChange={e => setAskContent(e.target.value)} placeholder="請問..." rows={5} className="w-full bg-gray-50 border-2 border-gray-200 focus:bg-white focus:border-blue-500 rounded-xl px-4 py-4 text-lg font-medium outline-none transition-all resize-none placeholder:text-gray-300" />
+                                                </div>
+                                                <button type="submit" disabled={submitting} className="w-full bg-slate-800 text-white py-4 rounded-xl font-black text-lg shadow-lg active:scale-95 transition-all disabled:opacity-50">送出提問</button>
+                                            </form>
+                                        ) : (
+                                            <div>
+                                                <button onClick={checkFeedback} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mb-6 active:scale-95 transition-all">查詢回覆</button>
+                                                {hasChecked && checkResults.length === 0 && (
+                                                    <div className="text-center text-gray-400 py-8 font-bold">此戶號尚無提問紀錄</div>
+                                                )}
+                                                <div className="space-y-4">
+                                                    {checkResults.map(f => (
+                                                        <div key={f.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                                                            <div className="flex justify-between mb-2">
+                                                                <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-1 rounded">{f.createdAt?.toDate?.().toLocaleDateString()} 提問</span>
+                                                                {f.status === 'replied' ? <span className="text-green-600 text-xs font-bold bg-green-100 px-2 py-1 rounded">已回覆</span> : <span className="text-orange-500 text-xs font-bold bg-orange-100 px-2 py-1 rounded">待回覆</span>}
+                                                            </div>
+                                                            <p className="font-bold text-gray-800 mb-3">{f.content}</p>
+                                                            {f.reply && (
+                                                                <div className="bg-white p-3 rounded-lg border-l-4 border-green-500">
+                                                                    <p className="text-xs text-gray-400 font-bold mb-1">管理員回覆:</p>
+                                                                    <p className="text-gray-700">{f.reply}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* VIEW: ADMIN */}
+                        {view === 'admin' && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                {!isAdmin ? (
+                                    <div className="bg-white rounded-3xl p-8 text-center border border-gray-100 shadow-md mt-10">
+                                        <div className="bg-gray-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                                            <Icons.Lock className="text-gray-500" size={32}/>
+                                        </div>
+                                        <h2 className="text-2xl font-black mb-2 text-slate-800">管理員登入</h2>
+                                        <p className="text-sm text-gray-500 mb-8 font-bold">請輸入密碼以進入後台</p>
+                                        <form onSubmit={handleAdminLogin}>
+                                            <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 rounded-2xl px-6 py-4 text-center mb-6 focus:bg-white focus:border-blue-500 outline-none text-xl font-bold tracking-widest" placeholder="admin888" />
+                                            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-lg shadow-lg">登入後台</button>
+                                        </form>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-8">
+                                        <div className="bg-white rounded-3xl p-5 shadow-md border-2 border-slate-100">
+                                            <h3 className="text-xl font-black text-slate-900 mb-4 flex items-center gap-2">
+                                                <Icons.Settings className="text-slate-500" /> 系統設定
+                                            </h3>
+                                            <div className="flex justify-between items-center mb-6 pb-6 border-b border-gray-100">
+                                                <div><div className="font-bold text-lg text-slate-900">審核新貼文</div><div className="text-xs text-gray-500 font-bold mt-1">開啟後，新貼文需手動批准</div></div>
+                                                <button onClick={() => saveSettings({...appSettings, requireApproval: !appSettings.requireApproval})} className={`relative w-16 h-9 rounded-full transition-colors ${appSettings.requireApproval ? 'bg-green-500' : 'bg-gray-300'}`}><div className={`absolute top-1 left-1 bg-white w-7 h-7 rounded-full transition-transform shadow-sm ${appSettings.requireApproval ? 'translate-x-7' : ''}`}></div></button>
+                                            </div>
+                                            <div className="flex justify-between items-center mb-6 pb-6 border-b border-gray-100">
+                                                <div><div className="font-bold text-lg text-slate-900">自動下架</div><div className="text-xs text-gray-500 font-bold mt-1">貼文自動隱藏天數</div></div>
+                                                <select value={appSettings.deleteAfterDays} onChange={(e) => saveSettings({...appSettings, deleteAfterDays: Number(e.target.value)})} className="bg-gray-100 font-bold text-slate-800 px-4 py-2 rounded-xl outline-none border-2 border-transparent focus:border-blue-500 appearance-none text-right">
+                                                    <option value={0}>永不過期</option>
+                                                    <option value={7}>7 天</option>
+                                                    <option value={14}>14 天</option>
+                                                    <option value={30}>30 天</option>
+                                                    <option value={60}>60 天</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-lg text-slate-900 mb-2">修改管理密碼</div>
+                                                <div className="space-y-2">
+                                                    <input type="text" placeholder="輸入新密碼" value={newAdminPassword} onChange={(e) => setNewAdminPassword(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2 text-center font-bold outline-none focus:border-blue-500" />
+                                                    <div className="flex gap-2">
+                                                        <input type="text" placeholder="再次輸入確認" value={confirmAdminPassword} onChange={(e) => setConfirmAdminPassword(e.target.value)} className="flex-1 bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2 text-center font-bold outline-none focus:border-blue-500" />
+                                                        <button onClick={updateAdminPassword} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold active:scale-95 transition-transform flex items-center gap-1 shrink-0"><Icons.Save size={16} /> 儲存</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-3xl p-5 shadow-md border-2 border-indigo-100">
+                                            <h3 className="text-xl font-black text-indigo-900 mb-4 flex items-center gap-2">
+                                                <Icons.MessageSquare className="text-indigo-500" /> 住戶反饋管理
+                                                {pendingFeedbacks.length > 0 && <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{pendingFeedbacks.length}</span>}
+                                            </h3>
+                                            {feedbacks.length === 0 ? <p className="text-gray-400 text-center py-4 font-bold">尚無任何反饋</p> : (
+                                                <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+                                                    {feedbacks.map(f => (
+                                                        <div key={f.id} className={`p-4 rounded-xl border-2 ${f.status === 'pending' ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-100'}`}>
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className="font-black text-gray-700 flex items-center gap-1"><Icons.Home size={14}/> {formatHouseholdId(f.householdId)}</span>
+                                                                <span className="text-xs text-gray-400">{f.createdAt?.toDate?.().toLocaleDateString()}</span>
+                                                            </div>
+                                                            <p className="text-gray-800 font-medium mb-3">{f.content}</p>
+                                                            {f.status === 'replied' ? (
+                                                                <div className="bg-white p-3 rounded-lg border border-green-100 text-sm">
+                                                                    <span className="text-green-600 font-bold block mb-1">已回覆:</span>
+                                                                    {f.reply}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex gap-2">
+                                                                    <input type="text" placeholder="輸入回覆..." value={replyText[f.id] || ''} onChange={e => setReplyText({...replyText, [f.id]: e.target.value})} className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                                                                    <button onClick={() => replyFeedback(f.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm">送出</button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between items-center px-2 mb-4">
+                                                <h2 className="font-black text-2xl text-slate-800">案件管理</h2>
+                                                <button onClick={() => setIsAdmin(false)} className="text-sm text-gray-600 font-bold bg-gray-200 px-5 py-2 rounded-full hover:bg-gray-300 transition">登出</button>
+                                            </div>
+                                            
+                                            {pendingListings.length > 0 && (
+                                                <div className="mb-6">
+                                                    <h3 className="text-orange-600 font-bold mb-3 px-2">待審核 ({pendingListings.length})</h3>
+                                                    <div className="space-y-4">
+                                                        {pendingListings.map(l => (
+                                                            <ListingCard key={l.id} listing={l} isAdmin={true} onClick={() => setSelectedListing(l)} onApprove={(id) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('listings').doc(id).update({status:'approved'})} onDelete={(id) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('listings').doc(id).delete()} onEdit={startEditing} />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div>
+                                                <h3 className="text-slate-600 font-bold mb-3 px-2">已發佈 ({approvedListings.length})</h3>
+                                                <div className="space-y-4 pb-8">
+                                                    {approvedListings.map(l => (
+                                                        <ListingCard key={l.id} listing={l} isAdmin={true} onClick={() => setSelectedListing(l)} onDelete={(id) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('listings').doc(id).delete()} onEdit={startEditing} />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </main>
+
+                    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 pb-safe flex justify-around items-center z-40 shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
+                        <button onClick={() => { resetForm(); setView('home'); }} className={`flex flex-col items-center gap-1.5 p-2 rounded-2xl transition-all w-20 ${view === 'home' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}>
+                            <Icons.Search size={28} strokeWidth={view === 'home' ? 3 : 2.5} />
+                            <span className="text-xs font-black">找車位</span>
+                        </button>
+                        <button onClick={() => { resetForm(); setView('post'); }} className="flex flex-col items-center justify-center -mt-10 group">
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 group-active:scale-95 border-4 border-white ${view === 'post' ? 'bg-slate-800' : 'bg-blue-600 text-white'}`}>
+                                <Icons.Plus size={36} className="text-white" strokeWidth={3} />
+                            </div>
+                            <span className={`text-xs font-black mt-2 transition-colors ${view === 'post' ? 'text-slate-800' : 'text-gray-400'}`}>我要刊登</span>
+                        </button>
+                        <button onClick={() => { resetForm(); setView('feedback'); }} className={`flex flex-col items-center gap-1.5 p-2 rounded-2xl transition-all w-20 ${view === 'feedback' ? 'text-slate-900' : 'text-gray-400 hover:text-gray-600'}`}>
+                            <Icons.HelpCircle size={28} strokeWidth={view === 'feedback' ? 3 : 2.5} />
+                            <span className="text-xs font-black">客服/反饋</span>
+                        </button>
+                    </nav>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
